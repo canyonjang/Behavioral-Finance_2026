@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 # 1. 페이지 설정
-st.set_page_config(page_title="행동재무학 퀴즈 시스템", layout="wide")
+st.set_page_config(page_title="행동재무학 퀴즈", layout="wide")
 
 # 2. 구글 시트 연결
 try:
@@ -143,3 +143,4 @@ with tab3:
             st.write("분석할 데이터가 없습니다.")
     except:
         st.write("데이터 연결 확인이 필요합니다.")
+
