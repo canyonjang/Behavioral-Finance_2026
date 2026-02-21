@@ -60,14 +60,11 @@ with tab1:
     # 기기별 제출 제한 로직
     if st.session_state.submitted_on_this_device:
         st.warning("⚠️ 이 기기에서 이미 제출이 완료되었습니다. 본인의 휴대폰으로만 제출해 주세요.")
-        if st.button("다시 제출해야 하나요? (입력창 열기)"):
-            st.session_state.submitted_on_this_device = False
-            st.rerun()
     else:
         with st.form("quiz_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
-                name = st.text_input("이름", placeholder="성함")
+                name = st.text_input("이름", placeholder="이름")
             with col2:
                 student_id = st.text_input("학번", placeholder="학번")
             
@@ -157,3 +154,4 @@ with tab3:
             st.error("데이터를 불러오는 데 실패했습니다.")
     elif admin_pw != "":
         st.error("비밀번호가 틀렸습니다.")
+
