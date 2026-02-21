@@ -12,9 +12,9 @@ try:
 except:
     st.error("구글 시트 연결 설정(Secrets)이 필요합니다.")
 
-# 3. 이번 주 설정
-CURRENT_WEEK = "2주차" 
-ADMIN_PASSWORD = "3383" # 선생님이 원하시는 비밀번호로 변경하세요
+# 3. 이번 주 설정 및 보안
+CURRENT_WEEK = "2주차"  # 이 부분을 매주 변경하세요 (예: 3주차)
+ADMIN_PASSWORD = "3383" # 선생님용 비밀번호
 
 QUIZ_DATA = [
     {"q": "1. 투자설계란, 투자목표와 (_____________)을 파악하여 투자자의 위험수준에 적정한 투자전략을 수립하는 과정이다.", "a": "투자기간"},
@@ -26,7 +26,7 @@ QUIZ_DATA = [
     {"q": "7. 사회보장적 성격의 (____________), 퇴직연금, 개인연금으로 노후소득보장제도가 구성된다.", "a": "공적연금"}
 ]
 
-# --- [세션 상태] 이 기기에서 제출했는지 확인하는 메모리 ---
+# --- [세션 상태] 기기별 제출 여부 메모리 ---
 if "submitted_on_this_device" not in st.session_state:
     st.session_state.submitted_on_this_device = False
 
@@ -57,9 +57,9 @@ tab1, tab2, tab3 = st.tabs(["✍️ 퀴즈 제출", "🖥️ 실시간 제출자
 with tab1:
     st.header("답안지")
     
-    # 기기별 제출 제한 로직
+    # [차단 로직] 이미 제출한 기기라면 폼을 아예 보여주지 않음
     if st.session_state.submitted_on_this_device:
-        st.warning("⚠️ 이 기기에서 이미 제출이 완료되었습니다. 본인의 휴대폰으로만 제출해 주세요.")
+        st.warning("⚠️ 이 기기에서 이미 제출이 완료되었습니다. 대리 제출 방지를 위해 추가 제출은 불가능합니다.")
     else:
         with st.form("quiz_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -68,7 +68,6 @@ with tab1:
             with col2:
                 student_id = st.text_input("학번", placeholder="학번")
             
-            st.info("💡 대리 제출 방지를 위해 이 기기에서는 한 번만 제출할 수 있습니다.")
             st.divider()
             
             user_responses = []
@@ -84,17 +83,17 @@ with tab1:
                     st.error("이름과 학번을 입력해 주세요.")
                 else:
                     try:
-                        # 1. 학번 중복 체크 (구글 시트 조회)
-                        existing_data = conn.read(worksheet="전체데이터", ttl=0)
-                        already_exists = existing_data[
-                            (existing_data['주차'] == CURRENT_WEEK) & 
-                            (existing_data['학번'] == student_id)
+                        # 1. 중복 제출 체크 (학번 기준)
+                        master_data = conn.read(worksheet="전체데이터", ttl=0)
+                        already_exists = master_data[
+                            (master_data['주차'] == CURRENT_WEEK) & 
+                            (master_data['학번'] == student_id)
                         ]
 
                         if not already_exists.empty:
-                            st.error(f"❌ {name} 학생은 이미 {CURRENT_WEEK} 답안을 제출했습니다.")
+                            st.error(f"❌ {name} 학생은 이미 이번 주 답안을 제출했습니다.")
                         else:
-                            # 2. 데이터 저장 진행
+                            # 2. 데이터 생성
                             row_dict = {
                                 "주차": CURRENT_WEEK,
                                 "제출시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -114,18 +113,28 @@ with tab1:
                             row_dict["총점"] = total_correct
                             new_row = pd.DataFrame([row_dict])
 
-                            # 구글 시트 업데이트
-                            updated_master = pd.concat([existing_data, new_row], ignore_index=True)
+                            # 3. 이중 저장 프로세스
+                            # (1) 전체데이터 탭 저장
+                            updated_master = pd.concat([master_data, new_row], ignore_index=True)
                             conn.update(worksheet="전체데이터", data=updated_master)
                             
-                            # 3. 제출 성공 시 세션 상태 업데이트 (기기 제한 활성화)
+                            # (2) 주차별 탭 저장 (예: 2주차)
+                            try:
+                                week_data = conn.read(worksheet=CURRENT_WEEK, ttl=0)
+                                updated_week = pd.concat([week_data, new_row], ignore_index=True)
+                                conn.update(worksheet=CURRENT_WEEK, data=updated_week)
+                            except:
+                                # 시트에 주차 탭이 없을 경우 전체데이터에만 저장하고 넘어감
+                                pass
+                            
+                            # 4. 제출 성공 처리
                             st.session_state.submitted_on_this_device = True
-                            st.success(f"{name} 학생, 제출 완료! 명단 탭에서 이름을 확인하세요.")
+                            st.success(f"{name} 학생, 제출 성공!")
                             st.balloons()
-                            st.rerun() # 화면을 즉시 새로고침하여 제출창을 숨김
+                            st.rerun() # 즉시 새로고침하여 입력창 숨김
                             
                     except Exception as e:
-                        st.error(f"저장 실패. 관리자에게 문의하세요.")
+                        st.error("저장 중 오류가 발생했습니다. 구글 시트의 탭 이름들을 확인해 주세요.")
 
 # --- [TAB 2] 실시간 명단 ---
 with tab2:
@@ -137,21 +146,20 @@ with tab3:
     admin_pw = st.text_input("비밀번호를 입력하세요", type="password")
     
     if admin_pw == ADMIN_PASSWORD:
-        st.success("인증에 성공했습니다.")
+        st.success("인증 성공")
         try:
             data = conn.read(worksheet="전체데이터", ttl=0)
             if not data.empty:
-                st.subheader("학생별 누적 성적")
+                st.subheader("학생별 평균 정답률")
                 stats = data.groupby(['학번', '이름'])['총점'].mean().reset_index()
                 stats['정답률(%)'] = (stats['총점'] / 7 * 100).round(1)
                 st.dataframe(stats, use_container_width=True)
                 st.divider()
-                st.subheader("전체 원본 데이터")
+                st.subheader("누적 데이터 전체 보기")
                 st.write(data)
             else:
-                st.info("표시할 성적 데이터가 없습니다.")
+                st.info("데이터가 없습니다.")
         except:
-            st.error("데이터를 불러오는 데 실패했습니다.")
+            st.error("데이터 로드 실패")
     elif admin_pw != "":
-        st.error("비밀번호가 틀렸습니다.")
-
+        st.error("비밀번호 불일치")
