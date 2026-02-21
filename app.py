@@ -1,8 +1,8 @@
-from st_autorefresh import st_autorefresh
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+from st_autorefresh import st_autorefresh
 
 # 1. 페이지 설정
 st.set_page_config(page_title="행동재무학 퀴즈 시스템", layout="wide")
@@ -149,4 +149,5 @@ with tab3:
             st.write("분석할 데이터가 없습니다.")
     except:
         st.write("데이터 연결 확인이 필요합니다.")
+
 
