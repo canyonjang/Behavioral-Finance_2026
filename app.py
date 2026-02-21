@@ -48,7 +48,7 @@ def live_attendance_view():
         st.warning("데이터를 불러오는 중입니다... 잠시만 기다려주세요.")
 
 # --- 메인 화면 UI 구성 ---
-st.title(f"📊 {CURRENT_WEEK} 행동재무학 퀴")
+st.title(f"📊 {CURRENT_WEEK} 행동재무학 퀴즈")
 
 tab1, tab2, tab3 = st.tabs(["✍️ 퀴즈 제출", "🖥️ 실시간 제출자 명단", "📈 누적 성적 분석"])
 
@@ -143,5 +143,6 @@ with tab3:
             st.write("분석할 데이터가 없습니다.")
     except:
         st.write("데이터 연결 확인이 필요합니다.")
+
 
 
