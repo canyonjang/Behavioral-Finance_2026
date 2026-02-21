@@ -1,3 +1,4 @@
+from st_autorefresh import st_autorefresh
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -98,22 +99,28 @@ with tab1:
 
 # --- [TAB 2] 강의실 화면용 명단 ---
 with tab2:
-    st.header(f"📍 {CURRENT_WEEK} 제출 완료 명단")
-    st.info("이름이 나타나면 퇴실하셔도 좋습니다.")
-    if st.button("새로고침"):
-        try:
-            # 전체데이터에서 현재 주차 사람만 필터링
-            all_data = conn.read(worksheet="전체데이터")
-            today_list = all_data[all_data['주차'] == CURRENT_WEEK]
-            
-            if not today_list.empty:
-                cols = st.columns(6)
-                for i, row in enumerate(today_list.itertuples()):
-                    cols[i % 6].success(f"✅ {row.이름}")
-            else:
-                st.write("아직 제출자가 없습니다.")
-        except:
-            st.warning("데이터를 불러올 수 없습니다.")
+    # 10,000밀리초(10초)마다 이 페이지를 자동으로 새로고침합니다.
+    # 학생이 많을 때는 5초(5000)로 설정하셔도 됩니다.
+    st_autorefresh(interval=10000, key="datarefresh") 
+
+    st.header(f"📍 {CURRENT_WEEK} 제출 완료 명단 (10초마다 자동 갱신)")
+    st.info("이름이 나타나면 퇴실하셔도 좋습니다. (새로고침 버튼을 누르지 않아도 됩니다)")
+    
+    # 버튼 없이 바로 데이터를 읽어오도록 수정
+    try:
+        all_data = conn.read(worksheet="전체데이터")
+        # 이번 주차 데이터만 필터링
+        today_list = all_data[all_data['주차'] == CURRENT_WEEK]
+        
+        if not today_list.empty:
+            st.write(f"현재 총 {len(today_list)}명 제출 완료")
+            cols = st.columns(6)
+            for i, row in enumerate(today_list.itertuples()):
+                cols[i % 6].success(f"✅ {row.이름}")
+        else:
+            st.write("아직 제출자가 없습니다. 학생들이 제출을 시작하면 자동으로 나타납니다.")
+    except:
+        st.warning("데이터를 불러오는 중입니다...")
 
 # --- [TAB 3] 누적 성적 분석 ---
 with tab3:
@@ -142,3 +149,4 @@ with tab3:
             st.write("분석할 데이터가 없습니다.")
     except:
         st.write("데이터 연결 확인이 필요합니다.")
+
