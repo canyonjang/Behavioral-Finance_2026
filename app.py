@@ -59,7 +59,7 @@ with tab1:
     
     # [차단 로직] 이미 제출한 기기라면 폼을 아예 보여주지 않음
     if st.session_state.submitted_on_this_device:
-        st.warning("⚠️ 이 기기에서 이미 제출이 완료되었습니다. 대리 제출 방지를 위해 추가 제출은 불가능합니다.")
+        st.warning("⚠️ 이 기기에서 제출이 완료되었습니다. 응시는 더 이상 불가능합니다.")
     else:
         with st.form("quiz_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -76,7 +76,7 @@ with tab1:
                 ans = st.text_input(f"{i+1}번 답안", key=f"q{i}")
                 user_responses.append(ans)
 
-            submitted = st.form_submit_button("답안 제출하고 확인받기")
+            submitted = st.form_submit_button("답안 제출하고 확인받기(기기당 답안 제출은 1회만 가능하니, 신중하게 검토하고 버튼 누르세요)")
 
             if submitted:
                 if not name or not student_id:
@@ -163,3 +163,4 @@ with tab3:
             st.error("데이터 로드 실패")
     elif admin_pw != "":
         st.error("비밀번호 불일치")
+
