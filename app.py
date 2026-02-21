@@ -12,8 +12,9 @@ try:
 except:
     st.error("구글 시트 연결 설정(Secrets)이 필요합니다.")
 
-# 3. 이번 주 설정 (매주 문제만 수정하세요)
+# 3. 이번 주 설정
 CURRENT_WEEK = "2주차" 
+ADMIN_PASSWORD = "3383" # 선생님이 원하시는 비밀번호로 변경하세요
 
 QUIZ_DATA = [
     {"q": "1. 투자설계란, 투자목표와 (_____________)을 파악하여 투자자의 위험수준에 적정한 투자전략을 수립하는 과정이다.", "a": "투자기간"},
@@ -25,12 +26,15 @@ QUIZ_DATA = [
     {"q": "7. 사회보장적 성격의 (____________), 퇴직연금, 개인연금으로 노후소득보장제도가 구성된다.", "a": "공적연금"}
 ]
 
-# --- [기능] 실시간 명단 자동 업데이트 프래그먼트 ---
+# --- [세션 상태] 이 기기에서 제출했는지 확인하는 메모리 ---
+if "submitted_on_this_device" not in st.session_state:
+    st.session_state.submitted_on_this_device = False
+
+# --- [기능] 실시간 명단 자동 업데이트 ---
 @st.fragment(run_every="10s")
 def live_attendance_view():
     st.subheader("📍 실시간 제출 완료 명단 (10초 자동 갱신)")
     try:
-        # ttl=0으로 설정해야 즉시 반영됩니다.
         all_data = conn.read(worksheet="전체데이터", ttl=0)
         today_list = all_data[all_data['주차'] == CURRENT_WEEK]
         
@@ -45,63 +49,86 @@ def live_attendance_view():
         st.warning("데이터 연결 확인 중...")
 
 # --- 메인 화면 UI ---
-st.title("📊 행동재무학 퀴즈") # '시스템' 글자 삭제
+st.title("📊 행동재무학 퀴즈")
 
 tab1, tab2, tab3 = st.tabs(["✍️ 퀴즈 제출", "🖥️ 실시간 제출자 명단", "🔐 성적 분석(교수용)"])
 
 # --- [TAB 1] 학생 제출 화면 ---
 with tab1:
-    st.header("답안지") # '2주차' 글자 삭제
-    with st.form("quiz_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("이름", placeholder="성함")
-        with col2:
-            student_id = st.text_input("학번", placeholder="학번")
-        
-        st.divider()
-        
-        user_responses = []
-        for i, item in enumerate(QUIZ_DATA):
-            st.markdown(f"**{item['q']}**")
-            ans = st.text_input(f"{i+1}번 답안", key=f"q{i}")
-            user_responses.append(ans)
+    st.header("답안지")
+    
+    # 기기별 제출 제한 로직
+    if st.session_state.submitted_on_this_device:
+        st.warning("⚠️ 이 기기에서 이미 제출이 완료되었습니다. 본인의 휴대폰으로만 제출해 주세요.")
+        if st.button("다시 제출해야 하나요? (입력창 열기)"):
+            st.session_state.submitted_on_this_device = False
+            st.rerun()
+    else:
+        with st.form("quiz_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("이름", placeholder="성함")
+            with col2:
+                student_id = st.text_input("학번", placeholder="학번")
+            
+            st.info("💡 대리 제출 방지를 위해 이 기기에서는 한 번만 제출할 수 있습니다.")
+            st.divider()
+            
+            user_responses = []
+            for i, item in enumerate(QUIZ_DATA):
+                st.markdown(f"**{item['q']}**")
+                ans = st.text_input(f"{i+1}번 답안", key=f"q{i}")
+                user_responses.append(ans)
 
-        submitted = st.form_submit_button("답안 제출하고 확인받기")
+            submitted = st.form_submit_button("답안 제출하고 확인받기")
 
-        if submitted:
-            if not name or not student_id:
-                st.error("이름과 학번을 입력해 주세요.")
-            else:
-                row_dict = {
-                    "주차": CURRENT_WEEK,
-                    "제출시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "이름": name,
-                    "학번": student_id
-                }
-                
-                total_correct = 0
-                for i, item in enumerate(QUIZ_DATA, 1):
-                    u_ans = user_responses[i-1].strip().replace(" ", "")
-                    s_ans = item['a'].strip().replace(" ", "")
-                    is_correct = (u_ans == s_ans)
-                    if is_correct: total_correct += 1
-                    row_dict[f"q{i}_답"] = user_responses[i-1]
-                    row_dict[f"q{i}_결과"] = "O" if is_correct else "X"
-                
-                row_dict["총점"] = total_correct
-                new_row = pd.DataFrame([row_dict])
+            if submitted:
+                if not name or not student_id:
+                    st.error("이름과 학번을 입력해 주세요.")
+                else:
+                    try:
+                        # 1. 학번 중복 체크 (구글 시트 조회)
+                        existing_data = conn.read(worksheet="전체데이터", ttl=0)
+                        already_exists = existing_data[
+                            (existing_data['주차'] == CURRENT_WEEK) & 
+                            (existing_data['학번'] == student_id)
+                        ]
 
-                try:
-                    # 전체데이터 탭에 저장
-                    master_df = conn.read(worksheet="전체데이터", ttl=0)
-                    updated_master = pd.concat([master_df, new_row], ignore_index=True)
-                    conn.update(worksheet="전체데이터", data=updated_master)
-                    
-                    st.success(f"{name} 학생, 제출 완료! 명단 탭에서 이름을 확인하세요.")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"저장 실패. 구글 시트 권한(Service Account)을 확인하세요.")
+                        if not already_exists.empty:
+                            st.error(f"❌ {name} 학생은 이미 {CURRENT_WEEK} 답안을 제출했습니다.")
+                        else:
+                            # 2. 데이터 저장 진행
+                            row_dict = {
+                                "주차": CURRENT_WEEK,
+                                "제출시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "이름": name,
+                                "학번": student_id
+                            }
+                            
+                            total_correct = 0
+                            for i, item in enumerate(QUIZ_DATA, 1):
+                                u_ans = user_responses[i-1].strip().replace(" ", "")
+                                s_ans = item['a'].strip().replace(" ", "")
+                                is_correct = (u_ans == s_ans)
+                                if is_correct: total_correct += 1
+                                row_dict[f"q{i}_답"] = user_responses[i-1]
+                                row_dict[f"q{i}_결과"] = "O" if is_correct else "X"
+                            
+                            row_dict["총점"] = total_correct
+                            new_row = pd.DataFrame([row_dict])
+
+                            # 구글 시트 업데이트
+                            updated_master = pd.concat([existing_data, new_row], ignore_index=True)
+                            conn.update(worksheet="전체데이터", data=updated_master)
+                            
+                            # 3. 제출 성공 시 세션 상태 업데이트 (기기 제한 활성화)
+                            st.session_state.submitted_on_this_device = True
+                            st.success(f"{name} 학생, 제출 완료! 명단 탭에서 이름을 확인하세요.")
+                            st.balloons()
+                            st.rerun() # 화면을 즉시 새로고침하여 제출창을 숨김
+                            
+                    except Exception as e:
+                        st.error(f"저장 실패. 관리자에게 문의하세요.")
 
 # --- [TAB 2] 실시간 명단 ---
 with tab2:
@@ -110,12 +137,10 @@ with tab2:
 # --- [TAB 3] 비밀번호 잠금 성적 분석 ---
 with tab3:
     st.header("🔐 관리자 인증")
-    # 비밀번호 입력창 (type="password"로 설정하여 글자 숨김)
     admin_pw = st.text_input("비밀번호를 입력하세요", type="password")
     
-    if admin_pw == "3383": # <--- 선생님이 원하시는 비밀번호로 변경하세요!
+    if admin_pw == ADMIN_PASSWORD:
         st.success("인증에 성공했습니다.")
-        st.divider()
         try:
             data = conn.read(worksheet="전체데이터", ttl=0)
             if not data.empty:
@@ -123,9 +148,8 @@ with tab3:
                 stats = data.groupby(['학번', '이름'])['총점'].mean().reset_index()
                 stats['정답률(%)'] = (stats['총점'] / 7 * 100).round(1)
                 st.dataframe(stats, use_container_width=True)
-                
                 st.divider()
-                st.subheader("전체 데이터 보기")
+                st.subheader("전체 원본 데이터")
                 st.write(data)
             else:
                 st.info("표시할 성적 데이터가 없습니다.")
