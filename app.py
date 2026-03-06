@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 # 1. 과목 및 설정
 # ---------------------------------------------------------
 SUBJECT_NAME = "행동재무학 퀴즈"
-CURRENT_WEEK = "1주차" 
+CURRENT_WEEK = "2주차" 
 ADMIN_PASSWORD = "3383"
 
 QUIZ_DATA = [
@@ -135,4 +135,5 @@ with tab3:
                 st.divider()
                 st.download_button("엑셀 데이터 다운로드", data=df.to_csv(index=False).encode('utf-8-sig'), file_name=f"{SUBJECT_NAME}_결과.csv", mime="text/csv")
         except: st.write("데이터가 없습니다.")
+
 
