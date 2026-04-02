@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
@@ -25,9 +25,16 @@ NUM_QUESTIONS = len(QUIZ_DATA)
 
 st.set_page_config(page_title=f"{SUBJECT_NAME}", layout="wide")
 
+# Supabase 연결 설정
+@st.cache_resource
+def init_connection() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-except:
+    supabase = init_connection()
+except Exception as e:
     st.error("Secrets 설정을 확인해주세요.")
 
 if "submitted_on_this_device" not in st.session_state:
@@ -58,7 +65,6 @@ with tab1:
                 ans = st.text_input(f"{i+1}번 답안", key=f"q{i}")
                 user_responses.append(ans)
 
-            # 1. 제출 버튼 문구 수정
             submitted = st.form_submit_button("답안 제출하고 확인받기 (기기당 답안 제출은 1회만 가능하니, 신중하게 검토하고 버튼 누르세요)")
 
             if submitted:
@@ -66,15 +72,13 @@ with tab1:
                     st.error("이름과 학번을 입력해 주세요.")
                 else:
                     try:
-                        master_df = conn.read(worksheet="전체데이터", ttl=0)
+                        # 이미 제출한 내역이 있는지 수파베이스에서 조회
+                        existing_data = supabase.table("quiz_results").select("*").eq("주차", CURRENT_WEEK).eq("학번", student_id).execute()
                         
-                        already_exists = master_df[(master_df['주차'] == CURRENT_WEEK) & (master_df['학번'] == student_id)]
-                        
-                        if not already_exists.empty:
+                        if existing_data.data: # 데이터가 존재하면(리스트가 비어있지 않으면)
                             st.error(f"❌ {name} 학생은 이미 제출했습니다.")
                         else:
                             total_correct = 0
-                            # 2. 제출 시간 포맷 수정 (한국 시간 KST 기준 적용)
                             kst = timezone(timedelta(hours=9))
                             now_time = datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S")
                             
@@ -90,15 +94,14 @@ with tab1:
                             
                             row_dict["총점"] = total_correct
                             
-                            new_data = pd.concat([master_df, pd.DataFrame([row_dict])], ignore_index=True)
-                            conn.update(worksheet="전체데이터", data=new_data)
+                            # 수파베이스에 새로운 데이터 삽입(Insert)
+                            supabase.table("quiz_results").insert(row_dict).execute()
                             
                             st.session_state.submitted_on_this_device = True
                             st.success(f"{name} 학생, 제출 성공!")
                             st.balloons()
                             st.rerun()
                     except:
-                        # 3. 과부하 안내 문구 삭제 (pass로 처리하여 아무 메시지 출력 안 함)
                         pass
 
 # --- [TAB 2] 수동 새로고침 명단 ---
@@ -108,8 +111,9 @@ with tab2:
     
     if st.button("🔄 명단 새로고침 (클릭)"):
         try:
-            data = conn.read(worksheet="전체데이터", ttl=0)
-            today_list = data[data['주차'] == CURRENT_WEEK]
+            # 해당 주차의 데이터만 수파베이스에서 필터링해서 가져옴
+            response = supabase.table("quiz_results").select("*").eq("주차", CURRENT_WEEK).execute()
+            today_list = pd.DataFrame(response.data)
             
             if not today_list.empty:
                 st.write(f"현재 총 {len(today_list)}명 제출 완료")
@@ -118,7 +122,7 @@ with tab2:
                     cols[i % 6].success(f"✅ {row.이름}")
             else:
                 st.write("아직 제출자가 없습니다.")
-        except:
+        except Exception as e:
             st.error("데이터를 불러오는 데 실패했습니다.")
 
 # --- [TAB 3] 성적 분석 ---
@@ -126,7 +130,10 @@ with tab3:
     st.header("🔐 관리자 인증")
     if st.text_input("비밀번호를 입력하세요", type="password") == ADMIN_PASSWORD:
         try:
-            df = conn.read(worksheet="전체데이터", ttl=0)
+            # 전체 데이터를 가져와서 분석
+            response = supabase.table("quiz_results").select("*").execute()
+            df = pd.DataFrame(response.data)
+            
             if not df.empty:
                 st.subheader("학생별 평균 정답률")
                 stats = df.groupby(['학번', '이름'])['총점'].mean().reset_index()
@@ -134,6 +141,7 @@ with tab3:
                 st.dataframe(stats, use_container_width=True)
                 st.divider()
                 st.download_button("엑셀 데이터 다운로드", data=df.to_csv(index=False).encode('utf-8-sig'), file_name=f"{SUBJECT_NAME}_결과.csv", mime="text/csv")
-        except: st.write("데이터가 없습니다.")
-
-
+            else:
+                st.write("제출된 데이터가 없습니다.")
+        except Exception as e: 
+            st.write("데이터를 불러오는 중 오류가 발생했습니다.")
